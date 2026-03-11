@@ -1,4 +1,4 @@
-![SVG Banners](https://svg-banners.vercel.app/api?type=origin&text1=CosyVoice🤠&text2=Text-to-Speech%20💖%20Large%20Language%20Model&width=800&height=210)
+![SVG Banners](https://svg-banners.vercel.app/api?type=origin&text1=CosyVoice&text2=Text-to-Speech%20x%20Large%20Language%20Model&width=800&height=210)
 
 # CosyVoice3 名人語音合成 (Fine-tuned TTS)
 
@@ -6,62 +6,26 @@
 
 ## 專案說明
 
-### 🗺️ 整體流程圖
+### 整體流程圖
 
 ```mermaid
-flowchart TB
-    subgraph A["① 環境建置"]
-        A1["安裝 CosyVoice3<br/>Fun-CosyVoice3-0.5B"] --> A2["conda 環境 cosyvoice<br/>Python 3.10 + CUDA"]
-        A2 --> A3["修改訓練程式碼<br/>適配 Windows + SIGINT 保護"]
-    end
+flowchart TD
+    A["1. 環境建置\nCosyVoice3 Fun-0.5B\nconda Python 3.10 + CUDA\n修改原始碼適配 Windows"]
 
-    subgraph B["② 韓國瑜語料處理"]
-        B1["原始演講音檔<br/>（MP3/M4A）"] --> B2["ffmpeg 切割<br/>+ 降噪處理"]
-        B2 --> B3["Whisper 語音辨識<br/>產生文字標註"]
-        B3 --> B4["品質篩選<br/>（時長/振幅/文字長度）"]
-        B4 --> B5["✅ 1507 個訓練片段<br/>+ 8 個 prompt 音檔"]
-    end
+    B1["2a. 韓國瑜語料處理\n演講音檔 → ffmpeg 切割 → Whisper 辨識 → 品質篩選\n結果: 1507 訓練片段 + 8 個 prompt"]
 
-    subgraph C["③ 豬哥亮語料處理"]
-        C1["訪談節目音檔"] --> C2["Phase 1: 粗切<br/>14s 固定長度分段"]
-        C2 --> C3["Phase 2: Whisper 辨識<br/>+ 中文/台語分類"]
-        C3 --> C4["人工篩選白名單<br/>（排除台語片段）"]
-        C4 --> C5["裁切短版本<br/>5s / 7s / 10s"]
-        C5 --> C6["✅ 296 個訓練片段<br/>+ 39 個 prompt 音檔"]
-    end
+    B2["2b. 豬哥亮語料處理\n訪談音檔 → 14s 切割 → Whisper 辨識\n→ 白名單篩選 → 裁切 5s / 7s / 10s\n結果: 296 訓練片段 + 39 個 prompt"]
 
-    subgraph D["④ 微調訓練"]
-        B5 --> D1["prepare_voice_data.py<br/>產生 parquet 格式"]
-        C6 --> D1
-        D1 --> D2["finetune_voice.py<br/>微調 LLM 模組"]
-        D2 --> D3["韓國瑜: llm_hanyu.pt<br/>（1 epoch, ~1.9GB）"]
-        D2 --> D4["豬哥亮: llm_zgl.pt<br/>（3 epochs, ~1.9GB）"]
-    end
+    C["3. 微調訓練\nparquet 資料準備 → LLM 模組 fine-tune\n韓國瑜: 1 epoch → llm_hanyu.pt\n豬哥亮: 3 epochs → llm_zgl.pt"]
 
-    subgraph E["⑤ WebUI 部署"]
-        D3 --> E1["start_webui_ngrok.py"]
-        D4 --> E1
-        E1 --> E2["Gradio 多分頁介面"]
-        E2 --> E3["名人 TTS<br/>（選說話人 + prompt）"]
-        E2 --> E4["語音克隆<br/>（上傳自訂音檔）"]
-        E2 --> E5["進階模式<br/>（指令控制）"]
-        E1 --> E6["ngrok 隧道<br/>公開 HTTPS 連結"]
-    end
+    D["4. WebUI 部署\nGradio 三分頁介面 + 動態說話人切換\nngrok HTTPS 隧道公開存取"]
 
-    A --> B
-    A --> C
-    B --> D
+    A --> B1 --> C
+    A --> B2 --> C
     C --> D
-    D --> E
-
-    style A fill:#e3f2fd,stroke:#1565c0
-    style B fill:#fff3e0,stroke:#e65100
-    style C fill:#fce4ec,stroke:#c62828
-    style D fill:#e8f5e9,stroke:#2e7d32
-    style E fill:#f3e5f5,stroke:#6a1b9a
 ```
 
-### 📋 詳細製作過程
+### 詳細製作過程
 
 #### 第一步：環境建置
 
@@ -137,7 +101,7 @@ flowchart TB
    - 綁定固定域名 `unferried-milo-unphlegmatically.ngrok-free.dev`
    - 手機、外部電腦都能直接存取
 
-### 🏗️ 系統架構圖
+### 系統架構圖
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -168,13 +132,13 @@ flowchart TB
 │                  ▼                               │
 │     CosyVoice3 Fun-0.5B 推理引擎                  │
 │    ┌─────┐  ┌──────┐  ┌────────┐                │
-│    │ LLM │→│ Flow  │→│ HiFiGAN │→ 🔊 語音輸出   │
+│    │ LLM │→│ Flow  │→│ HiFiGAN │→ 語音輸出      │
 │    └─────┘  └──────┘  └────────┘                │
 └──────────────────────────────────────────────────┘
               RTX 4070 (12GB VRAM)
 ```
 
-### 🎯 做了什麼
+### 做了什麼
 
 1. **語音微調訓練 (Fine-tuning)**
    - 使用 CosyVoice3 的 LLM 模組進行語音微調
@@ -192,7 +156,7 @@ flowchart TB
    - 自動裁切不同長度的 prompt 版本（5s / 7s / 10s）
    - 白名單 + 黑名單機制過濾品質不佳的片段
 
-### 📁 新增檔案
+### 新增檔案
 
 | 檔案 | 說明 |
 |------|------|
@@ -209,7 +173,7 @@ flowchart TB
 | `my_zero_shot.py` | Zero-shot 測試腳本 |
 | `record_prompt.py` | Prompt 音檔錄製工具 |
 
-### 🔧 修改的原始檔案
+### 修改的原始檔案
 
 | 檔案 | 修改內容 |
 |------|----------|
@@ -217,14 +181,14 @@ flowchart TB
 | `cosyvoice/utils/executor.py` | 訓練流程調整 |
 | `cosyvoice/utils/train_utils.py` | 訓練工具函數修改 |
 
-### 💻 運行環境
+### 運行環境
 
 - **GPU**: NVIDIA RTX 4070 (12GB VRAM)
 - **OS**: Windows
 - **Python**: 3.10（conda 環境 `cosyvoice`）
 - **模型**: Fun-CosyVoice3-0.5B
 
-### 🚀 使用方式
+### 使用方式
 
 ```bash
 # 啟動 WebUI（含 ngrok 公開連結）
@@ -238,7 +202,7 @@ python finetune_voice.py
 python trim_zgl_prompts.py
 ```
 
-### ⚠️ 未上傳的大型檔案
+### 未上傳的大型檔案
 
 以下檔案因體積過大未包含在此 repo 中：
 - `pretrained_models/` — CosyVoice3 預訓練模型（需從 ModelScope/HuggingFace 下載）
