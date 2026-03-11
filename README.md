@@ -6,6 +6,174 @@
 
 ## 專案說明
 
+### 🗺️ 整體流程圖
+
+```mermaid
+flowchart TB
+    subgraph A["① 環境建置"]
+        A1["安裝 CosyVoice3<br/>Fun-CosyVoice3-0.5B"] --> A2["conda 環境 cosyvoice<br/>Python 3.10 + CUDA"]
+        A2 --> A3["修改訓練程式碼<br/>適配 Windows + SIGINT 保護"]
+    end
+
+    subgraph B["② 韓國瑜語料處理"]
+        B1["原始演講音檔<br/>（MP3/M4A）"] --> B2["ffmpeg 切割<br/>+ 降噪處理"]
+        B2 --> B3["Whisper 語音辨識<br/>產生文字標註"]
+        B3 --> B4["品質篩選<br/>（時長/振幅/文字長度）"]
+        B4 --> B5["✅ 1507 個訓練片段<br/>+ 8 個 prompt 音檔"]
+    end
+
+    subgraph C["③ 豬哥亮語料處理"]
+        C1["訪談節目音檔"] --> C2["Phase 1: 粗切<br/>14s 固定長度分段"]
+        C2 --> C3["Phase 2: Whisper 辨識<br/>+ 中文/台語分類"]
+        C3 --> C4["人工篩選白名單<br/>（排除台語片段）"]
+        C4 --> C5["裁切短版本<br/>5s / 7s / 10s"]
+        C5 --> C6["✅ 296 個訓練片段<br/>+ 39 個 prompt 音檔"]
+    end
+
+    subgraph D["④ 微調訓練"]
+        B5 --> D1["prepare_voice_data.py<br/>產生 parquet 格式"]
+        C6 --> D1
+        D1 --> D2["finetune_voice.py<br/>微調 LLM 模組"]
+        D2 --> D3["韓國瑜: llm_hanyu.pt<br/>（1 epoch, ~1.9GB）"]
+        D2 --> D4["豬哥亮: llm_zgl.pt<br/>（3 epochs, ~1.9GB）"]
+    end
+
+    subgraph E["⑤ WebUI 部署"]
+        D3 --> E1["start_webui_ngrok.py"]
+        D4 --> E1
+        E1 --> E2["Gradio 多分頁介面"]
+        E2 --> E3["名人 TTS<br/>（選說話人 + prompt）"]
+        E2 --> E4["語音克隆<br/>（上傳自訂音檔）"]
+        E2 --> E5["進階模式<br/>（指令控制）"]
+        E1 --> E6["ngrok 隧道<br/>公開 HTTPS 連結"]
+    end
+
+    A --> B
+    A --> C
+    B --> D
+    C --> D
+    D --> E
+
+    style A fill:#e3f2fd,stroke:#1565c0
+    style B fill:#fff3e0,stroke:#e65100
+    style C fill:#fce4ec,stroke:#c62828
+    style D fill:#e8f5e9,stroke:#2e7d32
+    style E fill:#f3e5f5,stroke:#6a1b9a
+```
+
+### 📋 詳細製作過程
+
+#### 第一步：環境建置
+
+1. 從 GitHub clone [FunAudioLLM/CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
+2. 建立 conda 環境 `cosyvoice`（Python 3.10），安裝 PyTorch + CUDA
+3. 從 ModelScope 下載 `Fun-CosyVoice3-0.5B` 預訓練模型
+4. **修改原始碼適配 Windows**：
+   - `cosyvoice/bin/train.py`：移除 Linux 專用的多進程設定、加入 `signal.SIG_IGN` 防止 Ctrl+C 中斷訓練
+   - `cosyvoice/utils/executor.py`：調整訓練迴圈
+   - `cosyvoice/utils/train_utils.py`：修改工具函數
+
+#### 第二步：韓國瑜語料處理
+
+1. **取得原始音檔**：收集韓國瑜公開演講錄音
+2. **音檔前處理**：使用 ffmpeg 轉檔、切割為適當長度、正規化音量
+3. **語音辨識**：使用 Whisper 模型進行語音轉文字，產生每個片段的 `.txt` 標註
+4. **品質篩選**（`find_clips.py`）：
+   - 時長過濾：3~8 秒
+   - 振幅過濾：最大振幅 > 0.15（排除靜音）
+   - 文字長度：≥ 6 個字（排除辨識失敗的片段）
+   - 黑名單機制：手動排除 3 個品質差的片段（`clip_0042`、`clip_0171`、`clip_0017`）
+5. **最終結果**：1507 個訓練片段 + 8 個精選 prompt 音檔
+
+#### 第三步：豬哥亮語料處理
+
+1. **取得原始音檔**：豬哥亮訪談節目錄音
+2. **Phase 1 粗切**（`separate_zgl_phase1.py`）：將長音檔以 14 秒固定長度切割為 296 個片段
+3. **Phase 2 辨識**（`separate_zgl_whisper.py`）：使用 Whisper 對每個片段進行語音辨識
+4. **難題：台語內容**：
+   - 豬哥亮大量使用台語，而 CosyVoice3 與 Whisper 都不支援台語
+   - Whisper 會把台語辨識成亂碼或錯誤的中文
+   - **解決方案**：人工聆聽，建立 13 個純中文片段的白名單（`whitelist_base`）
+5. **裁切短版本**（`trim_zgl_prompts.py`）：
+   - 14 秒的片段太長，會導致 CosyVoice 警告「合成文字比 prompt 文字短」
+   - 將每個白名單片段裁切為 5s / 7s / 10s 三種長度
+   - 文字標註按比例截斷
+   - 產生 75 個短版本（25 片段 × 3 種長度）
+6. **最終結果**：296 個訓練片段 + 39 個 prompt（13 基礎片段 × 3 長度）
+
+#### 第四步：微調訓練
+
+1. **資料格式轉換**（`prepare_voice_data.py`）：
+   - 將 WAV + TXT 轉換為 CosyVoice 要求的 parquet 格式
+   - 提取 speech token（語音特徵向量）
+   - 提取 speaker embedding（說話人嵌入向量）
+2. **LLM 模組微調**（`finetune_voice.py`）：
+   - 僅微調 CosyVoice3 的 LLM 模組（不動 flow / hifigan）
+   - 韓國瑜：訓練 1 個 epoch → `llm_hanyu.pt`（1930.9 MB）
+   - 豬哥亮：訓練 3 個 epoch → `llm_zgl.pt`（1930.9 MB）
+   - 硬體：RTX 4070 12GB，訓練時間約數小時
+3. **Windows 訓練問題排解**：
+   - 加入 `CREATE_NEW_PROCESS_GROUP` 避免子進程被 SIGINT 殺死
+   - 加入 `signal.SIG_IGN` 忽略 Ctrl+C 信號，防止訓練中斷
+   - ONNX Runtime 僅支援 CPU（不影響 PyTorch CUDA 訓練）
+
+#### 第五步：WebUI 部署
+
+1. **建構 Gradio 介面**（`start_webui_ngrok.py`，約 820 行）：
+   - **Tab 1 — 名人 TTS**：選擇說話人（韓國瑜/豬哥亮）→ 選擇 prompt 片段 → 輸入文字 → 生成語音
+   - **Tab 2 — 語音克隆**：上傳自訂參考音檔 → 選擇說話人模型 → 生成語音
+   - **Tab 3 — 進階模式**：支援 instruct 指令控制語速、情感等
+2. **動態說話人切換**（`switch_speaker()`）：
+   - 使用 `torch.load()` 載入對應的 `llm_*.pt` 權重
+   - 直接覆蓋 `cosyvoice.model.llm` 的 `state_dict`
+   - 切換時間 < 2 秒，不需重啟服務
+3. **Prompt 自動篩選系統**（`scan_prompts_for_speaker()`）：
+   - 啟動時自動掃描 `voice_data/` 下的音檔
+   - 根據 Whisper 辨識文字、音檔時長、振幅等自動篩選
+   - 支援白名單/黑名單機制
+   - 豬哥亮的 prompt 按片段分組，同一句話提供 5s/7s/10s 三種長度可選
+4. **ngrok 隧道**：
+   - 使用 pyngrok 自動建立 HTTPS 隧道
+   - 綁定固定域名 `unferried-milo-unphlegmatically.ngrok-free.dev`
+   - 手機、外部電腦都能直接存取
+
+### 🏗️ 系統架構圖
+
+```
+┌─────────────────────────────────────────────────┐
+│                  使用者 (瀏覽器)                    │
+│         手機 / 電腦 / 任何裝置                      │
+└──────────────────────┬──────────────────────────┘
+                       │ HTTPS
+                       ▼
+┌──────────────────────────────────────────────────┐
+│              ngrok 隧道 (公開連結)                  │
+│   unferried-milo-unphlegmatically.ngrok-free.dev │
+└──────────────────────┬───────────────────────────┘
+                       │ localhost:7860
+                       ▼
+┌──────────────────────────────────────────────────┐
+│            Gradio WebUI (3 個分頁)                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────┐     │
+│  │ 名人 TTS │ │ 語音克隆  │ │   進階模式    │     │
+│  └────┬─────┘ └────┬─────┘ └──────┬───────┘     │
+│       └────────────┼──────────────┘              │
+│                    ▼                             │
+│         switch_speaker() 動態切換                 │
+│    ┌──────────────┬──────────────┐               │
+│    │ llm_hanyu.pt │ llm_zgl.pt   │               │
+│    │  (韓國瑜)     │  (豬哥亮)     │               │
+│    └──────┬───────┴──────┬───────┘               │
+│           └──────┬───────┘                       │
+│                  ▼                               │
+│     CosyVoice3 Fun-0.5B 推理引擎                  │
+│    ┌─────┐  ┌──────┐  ┌────────┐                │
+│    │ LLM │→│ Flow  │→│ HiFiGAN │→ 🔊 語音輸出   │
+│    └─────┘  └──────┘  └────────┘                │
+└──────────────────────────────────────────────────┘
+              RTX 4070 (12GB VRAM)
+```
+
 ### 🎯 做了什麼
 
 1. **語音微調訓練 (Fine-tuning)**
