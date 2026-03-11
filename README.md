@@ -1,5 +1,89 @@
 ![SVG Banners](https://svg-banners.vercel.app/api?type=origin&text1=CosyVoice🤠&text2=Text-to-Speech%20💖%20Large%20Language%20Model&width=800&height=210)
 
+# CosyVoice3 名人語音合成 (Fine-tuned TTS)
+
+> 基於 [FunAudioLLM/CosyVoice](https://github.com/FunAudioLLM/CosyVoice) 的 **Fun-CosyVoice3-0.5B** 模型，微調訓練了**韓國瑜**與**豬哥亮**兩位名人的語音，並搭建了支援 ngrok 公開存取的 Gradio WebUI。
+
+## 專案說明
+
+### 🎯 做了什麼
+
+1. **語音微調訓練 (Fine-tuning)**
+   - 使用 CosyVoice3 的 LLM 模組進行語音微調
+   - **韓國瑜**：從演講音檔中切出 1507 個訓練片段，微調產生 `llm_hanyu.pt`
+   - **豬哥亮**：從訪談節目中切出 296 個片段（14s 固定長度），微調產生 `llm_zgl.pt`（3 個 epoch）
+
+2. **多說話人 WebUI**
+   - 三個分頁：「名人 TTS」、「語音克隆」、「進階模式」
+   - 支援即時切換說話人（動態載入不同 LLM 權重）
+   - 內建篩選好的 prompt 音檔（韓國瑜 8 個、豬哥亮 39 個）
+   - 透過 ngrok 隧道提供公開 HTTPS 連結
+
+3. **語料處理工具鏈**
+   - 音檔分離、Whisper 語音辨識、品質篩選
+   - 自動裁切不同長度的 prompt 版本（5s / 7s / 10s）
+   - 白名單 + 黑名單機制過濾品質不佳的片段
+
+### 📁 新增檔案
+
+| 檔案 | 說明 |
+|------|------|
+| `start_webui_ngrok.py` | WebUI 主程式（Gradio + ngrok 隧道） |
+| `finetune_voice.py` | 語音微調訓練腳本 |
+| `trim_zgl_prompts.py` | 將 14s 長片段裁切為 5s/7s/10s 短版 |
+| `prepare_voice_data.py` | 語料資料準備腳本 |
+| `prepare_speaker_data.py` | 說話人資料準備 |
+| `find_clips.py` | 片段品質篩選工具 |
+| `separate_zgl.py` | 豬哥亮語料分離（主程式） |
+| `separate_zgl_phase1.py` | 豬哥亮語料分離（階段一） |
+| `separate_zgl_phase2.py` | 豬哥亮語料分離（階段二） |
+| `separate_zgl_whisper.py` | 豬哥亮語料 Whisper 辨識 |
+| `my_zero_shot.py` | Zero-shot 測試腳本 |
+| `record_prompt.py` | Prompt 音檔錄製工具 |
+
+### 🔧 修改的原始檔案
+
+| 檔案 | 修改內容 |
+|------|----------|
+| `cosyvoice/bin/train.py` | 適配 Windows 環境、加入 SIGINT 保護 |
+| `cosyvoice/utils/executor.py` | 訓練流程調整 |
+| `cosyvoice/utils/train_utils.py` | 訓練工具函數修改 |
+
+### 💻 運行環境
+
+- **GPU**: NVIDIA RTX 4070 (12GB VRAM)
+- **OS**: Windows
+- **Python**: 3.10（conda 環境 `cosyvoice`）
+- **模型**: Fun-CosyVoice3-0.5B
+
+### 🚀 使用方式
+
+```bash
+# 啟動 WebUI（含 ngrok 公開連結）
+conda activate cosyvoice
+python start_webui_ngrok.py --port 7860
+
+# 微調訓練（需要先準備好 voice_data 資料夾）
+python finetune_voice.py
+
+# 裁切 prompt 短版本
+python trim_zgl_prompts.py
+```
+
+### ⚠️ 未上傳的大型檔案
+
+以下檔案因體積過大未包含在此 repo 中：
+- `pretrained_models/` — CosyVoice3 預訓練模型（需從 ModelScope/HuggingFace 下載）
+- `voice_data/` — 訓練語料（韓國瑜 1507 片段、豬哥亮 296+75 片段）
+- `finetune_output/` — 微調輸出模型（`llm_hanyu.pt`、`llm_zgl.pt`）
+- `raw_audio/` — 原始音檔素材
+
+---
+
+## 以下為原始 CosyVoice README
+
+---
+
 ## 👉🏻 CosyVoice 👈🏻
 
 **Fun-CosyVoice 3.0**: [Demos](https://funaudiollm.github.io/cosyvoice3/); [Paper](https://arxiv.org/pdf/2505.17589); [Modelscope](https://www.modelscope.cn/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512); [Huggingface](https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512); [CV3-Eval](https://github.com/FunAudioLLM/CV3-Eval)
