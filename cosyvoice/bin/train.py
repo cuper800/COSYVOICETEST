@@ -21,7 +21,10 @@ from copy import deepcopy
 import os
 import torch
 import torch.distributed as dist
-import deepspeed
+try:
+    import deepspeed
+except ImportError:
+    deepspeed = None
 
 from hyperpyyaml import load_hyperpyyaml
 
@@ -89,7 +92,7 @@ def get_args():
                         default=60,
                         type=int,
                         help='timeout (in seconds) of cosyvoice_join.')
-    parser = deepspeed.add_config_arguments(parser)
+    parser = deepspeed.add_config_arguments(parser) if deepspeed is not None else parser
     args = parser.parse_args()
     return args
 
@@ -131,6 +134,17 @@ def main():
     if args.dpo is True:
         configs[args.model].forward = configs[args.model].forward_dpo
     model = configs[args.model]
+
+    # Enable gradient checkpointing to save VRAM (critical for 12GB GPUs)
+    if hasattr(model, 'llm') and hasattr(model.llm, 'model'):
+        try:
+            model.llm.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+            logging.info('Enabled gradient checkpointing for LLM to save VRAM')
+        except Exception as e:
+            logging.warning('Failed to enable gradient checkpointing: {}'.format(e))
+
     start_step, start_epoch = 0, -1
     if args.checkpoint is not None:
         if os.path.exists(args.checkpoint):

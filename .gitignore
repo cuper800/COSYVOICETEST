@@ -42,7 +42,6 @@ tensorboard
 compile_commands.json
 
 # train/inference files
-*.wav
 *.m4a
 *.aac
 *.pt
@@ -50,3 +49,25 @@ pretrained_models/*
 *_pb2_grpc.py
 *_pb2.py
 *.tar
+
+# 大型資料（不推到 GitHub）
+voice_data/
+finetune_output/
+raw_audio/
+.gradio/
+*.log
+*.mp3
+
+# 暫存/測試腳本
+_temp_*.py
+_*.txt
+
+# 測試產生的 wav 輸出
+*.wav
+ref_clips/
+
+# 測試腳本
+test_import*.py
+tw_test.py
+minnan_test.py
+start_webui_ngrok_old.py

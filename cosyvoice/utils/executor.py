@@ -143,7 +143,7 @@ class Executor:
         dist.barrier()
         self.cv(model, cv_data_loader, writer, info_dict, on_batch_end=True)
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def cv(self, model, cv_data_loader, writer, info_dict, on_batch_end=True):
         ''' Cross validation on
         '''
